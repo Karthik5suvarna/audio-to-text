@@ -1,0 +1,23 @@
+# Virtual env
+.venv/
+
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Model weights
+*.pt
+*.bin
+*.safetensors
+
+# Audio files
+*.wav
+*.mp3
+
+# Mac
+.DS_Store
+
+storage/

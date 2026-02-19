@@ -1,0 +1,25 @@
+# PyTorch with CUDA 12.1 — change the index URL to match your CUDA version:
+#   CUDA 11.8: https://download.pytorch.org/whl/cu118
+#   CUDA 12.1: https://download.pytorch.org/whl/cu121
+#   CUDA 12.4: https://download.pytorch.org/whl/cu124
+#   CPU only:  https://download.pytorch.org/whl/cpu
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch>=2.2.0
+torchaudio>=2.2.0
+
+# Whisper / HuggingFace
+transformers>=4.46.0
+accelerate>=0.34.0
+
+# FastAPI stack
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.18
+
+# Templating & async file I/O
+jinja2>=3.1.0
+aiofiles>=24.1.0
+
+# Config
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
