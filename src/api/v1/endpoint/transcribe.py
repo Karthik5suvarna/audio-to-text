@@ -36,15 +36,32 @@ async def transcribe_audio(file: UploadFile = File(...)):
         result = await asyncio.to_thread(whisper_service.transcribe, filepath)
 
         inference = result["inference_time_seconds"]
+        model_load = whisper_service.model_load_time
+        device_raw = whisper_service.device_info
+
+        speed_factor = round(audio_duration / inference, 2) if inference > 0 else 0.0
+
+        def _display_time(sec: float) -> str:
+            if sec >= 60:
+                return f"{sec / 60:.1f} min"
+            return f"{sec:.1f} sec"
+
+        def _hardware_display(dev: str) -> str:
+            if dev.startswith("cuda"):
+                return "NVIDIA GPU (CUDA)"
+            if dev == "mps":
+                return "Apple GPU (MPS)"
+            return "CPU"
 
         return TranscriptionResponse(
             text=result["text"],
             file_name=file.filename,
             file_size_mb=file_size_mb,
-            audio_duration_seconds=audio_duration,
-            inference_time_seconds=inference,
-            model_load_time_seconds=whisper_service.model_load_time,
-            device=whisper_service.device_info,
+            speed_factor=speed_factor,
+            audio_length_display=_display_time(audio_duration),
+            transcription_time_display=_display_time(inference),
+            model_load_display=_display_time(model_load),
+            hardware_display=_hardware_display(device_raw),
         )
     finally:
         file_service.delete_file(filepath)

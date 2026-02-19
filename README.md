@@ -84,10 +84,11 @@ Multipart file upload. Returns JSON:
   "text": "transcribed text...",
   "file_name": "recording.wav",
   "file_size_mb": 5.23,
-  "audio_duration_seconds": 120.5,
-  "inference_time_seconds": 1.847,
-  "model_load_time_seconds": 8.421,
-  "device": "cuda:0"
+  "speed_factor": 65.2,
+  "audio_length_display": "2.0 min",
+  "transcription_time_display": "1.8 sec",
+  "model_load_display": "8.4 sec",
+  "hardware_display": "NVIDIA GPU (CUDA)"
 }
 ```
 
