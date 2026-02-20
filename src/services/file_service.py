@@ -1,6 +1,5 @@
 import logging
 import os
-import subprocess
 import uuid
 from pathlib import Path
 
@@ -8,6 +7,7 @@ import aiofiles
 from fastapi import UploadFile
 
 from src.core.config import settings
+from src.services.audio_splitter import get_duration
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,7 @@ class FileService:
 
     @staticmethod
     def validate_extension(filename: str) -> bool:
-        ext = Path(filename).suffix.lower()
-        return ext in settings.allowed_extensions
+        return Path(filename).suffix.lower() in settings.allowed_extensions
 
     @staticmethod
     def get_file_size_mb(filepath: str) -> float:
@@ -46,21 +45,7 @@ class FileService:
 
     @staticmethod
     def get_audio_duration(filepath: str) -> float:
-        """Get audio duration in seconds using ffprobe."""
-        try:
-            result = subprocess.run(
-                [
-                    "ffprobe", "-v", "quiet",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
-                    filepath,
-                ],
-                capture_output=True, text=True, timeout=10,
-            )
-            return round(float(result.stdout.strip()), 2)
-        except Exception as e:
-            logger.warning("Could not determine audio duration: %s", e)
-            return 0.0
+        return get_duration(filepath)
 
 
 file_service = FileService()

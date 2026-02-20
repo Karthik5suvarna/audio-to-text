@@ -1,8 +1,7 @@
 import logging
 import time
 
-import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from faster_whisper import WhisperModel
 
 from src.core.config import settings
 
@@ -11,79 +10,121 @@ logger = logging.getLogger(__name__)
 
 class WhisperService:
     def __init__(self):
-        self.pipe = None
+        self.model: WhisperModel | None = None
         self.model_load_time: float = 0.0
-        self._device: str = ""
-        self._dtype = None
+        # self._device: str = ""
+        # self._compute_type: str = ""
+        self._devices: list[str] = []  # List to hold multiple devices
+        self._compute_types: list[str] = []  # List to hold compute types
 
-    def _resolve_device(self) -> str:
-        if settings.device != "auto":
-            return settings.device
-        if torch.cuda.is_available():
-            return "cuda:0"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
-        return "cpu"
+    # def _resolve_device_and_compute(self) -> tuple[str, str]:
+    def _resolve_devices_and_compute(self) -> tuple[list[str], list[str]]:
+        dev = settings.device
+        if dev == "auto":
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    # dev = "cuda"
+                    dev = ["cuda:0", "cuda:1"]  
+                else:
+                    dev = "cpu"
+            except ImportError:
+                dev = "cpu"
 
-    def _resolve_dtype(self, device: str):
-        if "cuda" in device:
-            return torch.float16
-        return torch.float32
+        # if dev.startswith("cuda"):
+        #     return dev, "float16"
+        # Handle the devices and compute types
+        if isinstance(dev, list) and all(d.startswith("cuda") for d in dev):
+            return dev, ["float16"] * len(dev)
+        else:
+            return ["cpu"], ["int8"]
+
+        # MPS not supported by CTranslate2 — fall back to CPU with int8 for speed
+        return "cpu", "int8"
 
     def load_model(self):
         start = time.perf_counter()
+        self._device, self._compute_type = self._resolve_device_and_compute()
 
-        self._device = self._resolve_device()
-        self._dtype = self._resolve_dtype(self._device)
-
-        logger.info("Loading model '%s' on device='%s' dtype=%s", settings.model_id, self._device, self._dtype)
-
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            settings.model_id,
-            torch_dtype=self._dtype,
-            low_cpu_mem_usage=True,
-            use_safetensors=True,
+        logger.info(
+            "Loading faster-whisper model '%s' on device='%s' compute_type='%s'",
+            settings.model_id, self._device, self._compute_type,
         )
-        model.to(self._device)
 
-        processor = AutoProcessor.from_pretrained(settings.model_id)
-
-        self.pipe = pipeline(
-            "automatic-speech-recognition",
-            model=model,
-            tokenizer=processor.tokenizer,
-            feature_extractor=processor.feature_extractor,
-            torch_dtype=self._dtype,
-            device=self._device,
-        )
+        # self.model = WhisperModel(
+        #     settings.model_id,
+        #     device=self._device,
+        #     compute_type=self._compute_type,
+        # )
+        # Initialize the Whisper model for each GPU
+        self.model = []
+        for device, compute_type in zip(self._devices, self._compute_types):
+            self.model.append(WhisperModel(
+                settings.model_id,
+                device=device,
+                compute_type=compute_type,
+            ))
 
         self.model_load_time = round(time.perf_counter() - start, 3)
         logger.info("Model loaded in %.3fs", self.model_load_time)
 
     def transcribe(self, audio_path: str) -> dict:
-        if self.pipe is None:
+        if self.model is None:
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
         start = time.perf_counter()
 
-        result = self.pipe(
+        segments, info = self.model.transcribe(
             audio_path,
-            chunk_length_s=30,
-            generate_kwargs={"language": "english"},
-            return_timestamps=False,
-            ignore_warning=True,  # suppress experimental chunk_length_s warning
+            language="en",
+            beam_size=1,
+            best_of=1,
+            vad_filter=True,
+            vad_parameters=dict(
+                min_silence_duration_ms=500,
+                speech_pad_ms=200,
+            ),
+            without_timestamps=True,
         )
 
+        chunk_size = len(segments) // len(self.model) 
+
+        # Process chunks on multiple GPUs
+        results = []
+        for idx, model in enumerate(self.model):
+            chunk_segments = segments[idx*chunk_size:(idx+1)*chunk_size]  # Assign chunks to each GPU
+            text = " ".join(seg.text.strip() for seg in chunk_segments)
+            results.append(text)
+
+        # Merge results
+        combined_text = " ".join(results)
         inference_time = round(time.perf_counter() - start, 3)
 
         return {
-            "text": result["text"].strip(),
+            "text": combined_text,
             "inference_time_seconds": inference_time,
-        }
+            "language": info.language,
+            "language_probability": round(info.language_probability, 3),
+            "vad_active": True,
+        } 
+
+        # text = " ".join(seg.text.strip() for seg in segments)
+        # inference_time = round(time.perf_counter() - start, 3)
+
+        # return {
+        #     "text": text,
+        #     "inference_time_seconds": inference_time,
+        #     "language": info.language,
+        #     "language_probability": round(info.language_probability, 3),
+        #     "vad_active": True,
+        # }
 
     @property
     def device_info(self) -> str:
-        return self._device or "not loaded"
+        if self._device == "cpu" and self._compute_type == "int8":
+            return "cpu (int8)"
+        return f"{self._device} ({self._compute_type})" if self._device else "not loaded"
 
 
 whisper_service = WhisperService()
+
