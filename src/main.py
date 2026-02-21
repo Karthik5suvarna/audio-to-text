@@ -11,8 +11,6 @@ from src.services.whisper_service import whisper_service
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger(__name__)
 
-whisper_service = WhisperService()
-
 def _force_exit_on_sigint(*_):
     os._exit(0)
 
